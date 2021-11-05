@@ -1,0 +1,15 @@
+server:
+    endpoint: opc.tcp://0.0.0.0
+    name: My Test Server
+    namespaces:
+        - http://my.namespace
+        - http://someother.namespace
+nodes:
+    - nodeid: 1234
+      name: MyVar
+      value: 15
+      type: variable
+    - nodeid: 431
+      name: YoursVar
+      value: 11
+      type: variable
