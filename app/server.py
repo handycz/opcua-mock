@@ -7,6 +7,7 @@ import yaml
 from asyncio import Event, AbstractEventLoop, Condition
 from asyncua import Server, Node
 from asyncua.tools import SubHandler
+from asyncua.ua import NodeId, QualifiedName
 from asyncua.ua.uaerrors import BadNoMatch
 from yaml import Loader
 
@@ -116,9 +117,16 @@ class MockServer:
         await self._create_namespaces(config["server"]["namespaces"])
         await self._create_node_level(config["nodes"], self._server.get_objects_node())
 
+    async def __aenter__(self):
+        await self._server.start()
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        await self._server.stop()
+
     async def _create_namespaces(self, namespaces: List[str]):
         for ns in namespaces:
-            return await self._server.register_namespace(ns)
+            self._logger.debug("Adding namespace %s", ns)
+            await self._server.register_namespace(ns)
 
     async def _create_node_level(self, nodes: Dict[str, Any], parent: Node):
         for node_description in nodes:
@@ -126,33 +134,29 @@ class MockServer:
 
             node_type = node_description["type"].lower()
 
+            nodeid = NodeId.from_string(node_description["nodeid"])
+            browsename = QualifiedName(node_description["name"], nodeid.NamespaceIndex)
+
             if node_type == "object":
-                await self._create_object(
-                    node_description["nodeid"],
-                    node_description["name"],
-                    node_description["value"],
-                    parent
+                obj = await parent.add_object(
+                    nodeid,
+                    browsename
                 )
+                await self._create_node_level(node_description["value"], obj)
+
             elif node_type == "variable":
                 await parent.add_variable(
-                    node_description["nodeid"],
-                    node_description["name"],
-                    node_description["value"],
+                    nodeid,
+                    browsename,
+                    node_description["value"]
                 )
+
             else:
                 raise ValueError(f"Unknown node type {node_type}")
 
     def _read_config(self) -> Dict[str, Any]:
         with open(self._config_path) as f:
             return yaml.load(f, Loader)
-
-    async def _create_object(self, nodeid: str, name: str, nodes: Dict[str, Any], parent: Node):
-        obj = await parent.add_object(
-            nodeid,
-            name
-        )
-
-        await self._create_node_level(nodes, obj)
 
     async def read(self, name: str = None, nodeid: str = None) -> Any:
         """
