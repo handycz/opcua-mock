@@ -67,3 +67,55 @@ async def _read_nodes(opcua_client: asyncua.Client) -> Tuple[Node, Node, Node, N
     var3 = opcua_client.get_node("ns=2;i=20001")
 
     return var1, var2, var3, obj
+
+
+@pytest.mark.asyncio
+async def test_server_read_node_by_name(mock_server: MockServer):
+    val = await mock_server.read(name="Obj/2:Var3")
+    assert val == 101
+
+
+@pytest.mark.asyncio
+async def test_server_read_node_by_id(mock_server: MockServer):
+    val = await mock_server.read(nodeid="ns=1;i=10001")
+    assert val == 11
+
+
+@pytest.mark.asyncio
+async def test_server_read_nonexistent_node_by_name(mock_server: MockServer):
+    with pytest.raises(ValueError):
+        await mock_server.read(name="ObjNonexistent")
+
+
+@pytest.mark.asyncio
+async def test_server_read_nonexistent_node_by_id(mock_server: MockServer):
+    with pytest.raises(ValueError):
+        await mock_server.read(nodeid="ns=1;i=10")
+
+
+@pytest.mark.asyncio
+async def test_server_write_node_by_name(mock_server: MockServer, opcua_client: asyncua.Client):
+    await mock_server.write(10000, name="Var2")
+    value = await opcua_client.get_node("ns=1;i=10001").read_value()
+
+    assert 10000 == value
+
+
+@pytest.mark.asyncio
+async def test_server_write_node_by_id(mock_server: MockServer, opcua_client: asyncua.Client):
+    await mock_server.write(20000, nodeid="ns=1;i=10001")
+    value = await opcua_client.get_node("ns=1;i=10001").read_value()
+
+    assert 10000 == value
+
+
+@pytest.mark.asyncio
+async def test_server_write_nonexistent_node_by_name(mock_server: MockServer, opcua_client: asyncua.Client):
+    with pytest.raises(ValueError):
+        await mock_server.write(10000, name="VarNonexistent")
+
+
+@pytest.mark.asyncio
+async def test_server_write_nonexistent_node_by_id(mock_server: MockServer, opcua_client: asyncua.Client):
+    with pytest.raises(ValueError):
+        await mock_server.write(20000, nodeid="ns=1;i=100000")

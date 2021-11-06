@@ -8,7 +8,7 @@ from asyncio import Event, AbstractEventLoop, Condition
 from asyncua import Server, Node
 from asyncua.tools import SubHandler
 from asyncua.ua import NodeId, QualifiedName
-from asyncua.ua.uaerrors import BadNoMatch
+from asyncua.ua.uaerrors import BadNoMatch, BadNodeIdUnknown
 from yaml import Loader
 
 
@@ -173,12 +173,12 @@ class MockServer:
             if nodeid is not None:
                 value = await self._server.get_node(nodeid).read_value()
             elif name is not None:
-                node = await self._server.get_objects_node().get_child(self._get_node_path(name))
+                node = await self._browse_path(name)
                 value = await node.read_value()
             else:
                 raise ValueError("Either name or nodeid has to be specified")
-        except BadNoMatch as e:
-            raise ValueError("Unknown variable name")
+        except (BadNoMatch, BadNodeIdUnknown) as e:
+            raise ValueError("Unknown variable identifier", e)
 
         self._logger.info("Read value of %s = %s", name, value)
         return value
@@ -199,17 +199,44 @@ class MockServer:
             if nodeid is not None:
                 return await self._server.get_node(nodeid).read_value()
             elif name is not None:
-                node = await self._server.get_objects_node().get_child(self._get_node_path(name))
+                node = await self._browse_path(name)
                 await node.write_value(value)
             else:
                 raise ValueError("Either name or nodeid has to be specified")
-        except BadNoMatch as e:
-            raise ValueError("Unknown variable name")
+        except (BadNoMatch, BadNodeIdUnknown) as e:
+            raise ValueError("Unknown variable identifier", e)
 
         self._logger.info("Written value of %s = %s", name, value)
 
-    def _get_node_path(self, name: str) -> List[str]:
-        return name.split("/")
+    async def _browse_path(self, path: str) -> Node:
+        node_names = path.split("/")
+        parent = self._server.get_objects_node()
+
+        for node_name in node_names:
+            if ":" in node_name:
+                parent = await parent.get_child(node_name)
+            else:
+                parent = await self._find_matching_child(parent, node_name)
+
+        return parent
+
+    @staticmethod
+    async def _find_matching_child(parent: Node, node_name: str) -> Node:
+        matches = list()
+        children = await parent.get_children()
+
+        for child in children:
+            if (await child.read_browse_name()).Name == node_name:
+                matches.append(child)
+
+        if len(matches) == 0:
+            raise ValueError(f"Node '{node_name}' undefined")
+        if len(matches) == 1:
+            parent = matches.pop()
+        else:
+            raise ValueError(f"Node name '{node_name} ambiguous")
+
+        return parent
 
     async def wait_for(self, name: str, value: Any) -> None:
         cond = await self._notification_handler.register_notify(name)
