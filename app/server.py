@@ -6,8 +6,9 @@ import asyncio
 import yaml
 from asyncio import Event, AbstractEventLoop, Condition
 from asyncua import Server, Node
+from asyncua.common.subscription import Subscription
 from asyncua.tools import SubHandler
-from asyncua.ua import NodeId, QualifiedName
+from asyncua.ua import NodeId, QualifiedName, DataChangeNotification
 from asyncua.ua.uaerrors import BadNoMatch, BadNodeIdUnknown
 from yaml import Loader
 
@@ -55,41 +56,41 @@ class MockFunction:
 
 class NotificationHandler(SubHandler):
     _logger: logging.Logger
-    _notify: Dict[str, Condition]
-    _callbacks: Dict[str, List[MockFunction]]
+    _notify: Dict[NodeId, Condition]
+    _callbacks: Dict[NodeId, List[MockFunction]]
 
     def __init__(self):
         self._logger = logging.getLogger(__name__)
         self._notify = dict()
         self._callbacks = dict()
 
-    async def register_notify(self, name: str) -> Condition:
+    async def register_notify(self, node_id: NodeId) -> Condition:
         # TODO: clean this up after it's not needed... maybe by a weak ref dict?
-        if name in self._notify:
-            return self._notify[name]
+        if node_id in self._notify:
+            return self._notify[node_id]
 
-        self._notify[name] = Condition()
-        return self._notify[name]
+        self._notify[node_id] = Condition()
+        return self._notify[node_id]
 
-    def register_callback(self, name: str, callback: MockFunction):
-        if name not in self._callbacks:
-            self._callbacks[name] = list()
+    def register_callback(self, node_id: NodeId, callback: MockFunction):
+        if node_id not in self._callbacks:
+            self._callbacks[node_id] = list()
 
-        if callback not in self._callbacks[name]:
-            self._callbacks[name].append(callback)
+        if callback not in self._callbacks[node_id]:
+            self._callbacks[node_id].append(callback)
         else:
             self._logger.warning("Mock function already registered, ignoring")
 
-    async def datachange_notification(self, node, val, data):
-        node_name = ...
+    async def datachange_notification(self, node: Node, val: Any, data: DataChangeNotification):
+        self._logger.info("Datachange notification of %s to %s", node, val)
 
-        if node_name in self._notify:
-            cond = self._notify[node_name]
+        if node.nodeid in self._notify:
+            cond = self._notify[node.nodeid]
             async with cond:
                 cond.notify_all()
 
-        if node_name in self._callbacks:
-            for func in self._callbacks[node_name]:
+        if node.nodeid in self._callbacks:
+            for func in self._callbacks[node.nodeid]:
                 func.call([val])
 
 
@@ -99,6 +100,7 @@ class MockServer:
     _config_path: str
     _functions: Dict[str, MockFunction]
     _notification_handler: NotificationHandler
+    _subscription: Subscription
 
     def __init__(self, config_path: str):
         self._logger = logging.getLogger(__name__)
@@ -110,7 +112,7 @@ class MockServer:
     async def init(self):
         await self._server.init()
         config = self._read_config()
-        await self._server.create_subscription(10, self._notification_handler)
+        self._subscription = await self._server.create_subscription(10, self._notification_handler)
 
         self._server.set_endpoint(config["server"]["endpoint"])
         self._server.set_server_name(config["server"]["name"])
@@ -238,17 +240,24 @@ class MockServer:
 
         return parent
 
-    async def wait_for(self, name: str, value: Any) -> None:
-        cond = await self._notification_handler.register_notify(name)
+    async def wait_for(self, name: str, value: Any, timeout: float = None) -> None:
+        node_to_watch = await self._browse_path(name)
+        cond = await self._notification_handler.register_notify(node_to_watch.nodeid)
+        await self._subscription.subscribe_data_change(await self._browse_path(name))
         loop = asyncio.get_running_loop()
-        await cond.wait_for(lambda: loop.call_soon_threadsafe(self.read, name) == value)
+
+        await asyncio.wait_for(
+            cond.wait_for(lambda: loop.call_soon_threadsafe(self.read, name) == value),
+            timeout
+        )
 
     async def on_change(
             self, name: str, callback: Callable[..., Union[None, Coroutine[Any, Any, None]]],
             arg_type: type = None
     ) -> None:
+        node_to_watch = await self._browse_path(name)
         self._notification_handler.register_callback(
-            name,
+            node_to_watch.nodeid,
             MockFunction(
                 name,
                 callback,

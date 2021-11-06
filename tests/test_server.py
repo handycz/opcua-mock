@@ -119,3 +119,25 @@ async def test_server_write_nonexistent_node_by_name(mock_server: MockServer, op
 async def test_server_write_nonexistent_node_by_id(mock_server: MockServer, opcua_client: asyncua.Client):
     with pytest.raises(ValueError):
         await mock_server.write(20000, nodeid="ns=1;i=100000")
+
+
+@pytest.mark.asyncio
+async def test_server_wait_for(mock_server: MockServer, opcua_client: asyncua.Client):
+    await mock_server.write(0, "Var2")
+
+    wait_task = asyncio.create_task(
+        mock_server.wait_for("Var2", 100, 5)
+    )
+
+    # Write some other value and check if the wait is not triggered
+    await mock_server.write(10, "Var2")
+    is_done = wait_task.done()
+    await asyncio.sleep(0.5)
+    assert is_done is False
+
+    # Write the expected value and check for it
+    await mock_server.write(100, "Var2")
+    is_done = wait_task.done()
+    await asyncio.sleep(0.5)
+    assert is_done is True
+    assert wait_task.exception() is None
