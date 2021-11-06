@@ -7,6 +7,7 @@ import yaml
 from asyncio import Event, AbstractEventLoop, Condition
 from asyncua import Server, Node
 from asyncua.tools import SubHandler
+from asyncua.ua.uaerrors import BadNoMatch
 from yaml import Loader
 
 
@@ -154,29 +155,57 @@ class MockServer:
         await self._create_node_level(nodes, obj)
 
     async def read(self, name: str = None, nodeid: str = None) -> Any:
-        if nodeid is not None:
-            value = await self._server.get_node(nodeid).read_value()
-        elif name is not None:
-            node = await self._server.get_objects_node().get_child(self._get_node_path(name))
-            value = await node.read_value()
-        else:
-            raise ValueError("Either name or nodeid has to be specified")
+        """
+        Writes a value of a variable given by its name or nodeid. The name of the
+        variable is a string of node names in the browse path separated by slashes relative
+        to the objects node. If a parent has multiple nodes of the same name in
+        different namespaces, the namespace can be specified as "<namespace idx>:<node name>".
+        Example of the browse path is "MainFolder/ParentObject/3:MyVariable".
+        :param name: path to the variable
+        :param nodeid: nodeid of the variable
+        """
 
-        self._logger.info("Read value of % = %s", name, value)
+        try:
+            if nodeid is not None:
+                value = await self._server.get_node(nodeid).read_value()
+            elif name is not None:
+                node = await self._server.get_objects_node().get_child(self._get_node_path(name))
+                value = await node.read_value()
+            else:
+                raise ValueError("Either name or nodeid has to be specified")
+        except BadNoMatch as e:
+            raise ValueError("Unknown variable name")
+
+        self._logger.info("Read value of %s = %s", name, value)
+        return value
 
     async def write(self, value: Any, name: str = None, nodeid: str = None) -> None:
-        if nodeid is not None:
-            return await self._server.get_node(nodeid).read_value()
-        elif name is not None:
-            node = await self._server.get_objects_node().get_child(self._get_node_path(name))
-            await node.write_value(value)
-        else:
-            raise ValueError("Either name or nodeid has to be specified")
+        """
+        Writes a value to a variable given by its name or nodeid. The name of the
+        variable is a string of node names in the browse path separated by slashes relative
+        to the objects node. If a parent has multiple nodes of the same name in
+        different namespaces, the namespace can be specified as "<namespace idx>:<node name>".
+        Example of the browse path is "MainFolder/ParentObject/3:MyVariable".
+        :param value: value to write
+        :param name: path to the variable
+        :param nodeid: nodeid of the variable
+        """
 
-        self._logger.info("Written value of % = %s", name, value)
+        try:
+            if nodeid is not None:
+                return await self._server.get_node(nodeid).read_value()
+            elif name is not None:
+                node = await self._server.get_objects_node().get_child(self._get_node_path(name))
+                await node.write_value(value)
+            else:
+                raise ValueError("Either name or nodeid has to be specified")
+        except BadNoMatch as e:
+            raise ValueError("Unknown variable name")
+
+        self._logger.info("Written value of %s = %s", name, value)
 
     def _get_node_path(self, name: str) -> List[str]:
-        return name.split(".")
+        return name.split("/")
 
     async def wait_for(self, name: str, value: Any) -> None:
         cond = await self._notification_handler.register_notify(name)
