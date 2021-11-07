@@ -122,7 +122,8 @@ async def test_server_write_nonexistent_node_by_id(mock_server: MockServer, opcu
 
 
 @pytest.mark.asyncio
-async def test_server_wait_for_predicate_not_fulfilled(mock_server: MockServer, opcua_client: asyncua.Client):
+@pytest.mark.parametrize('n', range(5))
+async def test_server_wait_for_predicate_not_fulfilled(mock_server: MockServer, opcua_client: asyncua.Client, n):
     await mock_server.write(0, "Var2")
 
     wait_task = asyncio.create_task(
@@ -131,15 +132,17 @@ async def test_server_wait_for_predicate_not_fulfilled(mock_server: MockServer, 
 
     # Write some other value and check if the wait is not triggered
     await mock_server.write(10, "Var2")
-    await wait_task
+    with pytest.raises(TimeoutError):
+        await wait_task
 
 
 @pytest.mark.asyncio
-async def test_server_wait_for_predicate_fulfilled(mock_server: MockServer, opcua_client: asyncua.Client):
+@pytest.mark.parametrize('n', range(5))
+async def test_server_wait_for_predicate_fulfilled(mock_server: MockServer, opcua_client: asyncua.Client, n):
     await mock_server.write(0, "Var2")
 
     wait_task = asyncio.create_task(
-        mock_server.wait_for("Var2", 100, 1.0)
+        mock_server.wait_for("Var2", 100, 3)
     )
 
     # Write the expected value and check for it

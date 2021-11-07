@@ -170,7 +170,6 @@ class MockServer:
         :param name: path to the variable
         :param nodeid: nodeid of the variable
         """
-
         try:
             if nodeid is not None:
                 value = await self._server.get_node(nodeid).read_value()
@@ -244,19 +243,19 @@ class MockServer:
         node_to_watch = await self._browse_path(name)
         cond = await self._notification_handler.register_notify(node_to_watch.nodeid)
         monitor_handle = await self._subscription.subscribe_data_change(node_to_watch)
-        loop = asyncio.get_running_loop()
 
-        async with cond:
-            await asyncio.wait_for(
-                await cond.wait_for(
-                    lambda: asyncio.run_coroutine_threadsafe(
-                        self.read(name), loop
-                    ) == value),
-                # cond.wait_for(lambda: True),
-                timeout
-            )
+        await asyncio.wait_for(
+            self._wait_for_value_read(name, value, cond),
+            timeout
+        )
 
         await self._subscription.unsubscribe(monitor_handle)
+
+    async def _wait_for_value_read(self, name: str, value: Any, change_notification: Condition):
+        read = None
+        async with change_notification:
+            while read != value:
+                read = await self.read(name)
 
     async def on_change(
             self, name: str, callback: Callable[..., Union[None, Coroutine[Any, Any, None]]],
