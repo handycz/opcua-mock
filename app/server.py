@@ -243,13 +243,20 @@ class MockServer:
     async def wait_for(self, name: str, value: Any, timeout: float = None) -> None:
         node_to_watch = await self._browse_path(name)
         cond = await self._notification_handler.register_notify(node_to_watch.nodeid)
-        await self._subscription.subscribe_data_change(await self._browse_path(name))
+        monitor_handle = await self._subscription.subscribe_data_change(node_to_watch)
         loop = asyncio.get_running_loop()
 
-        await asyncio.wait_for(
-            cond.wait_for(lambda: loop.call_soon_threadsafe(self.read, name) == value),
-            timeout
-        )
+        async with cond:
+            await asyncio.wait_for(
+                await cond.wait_for(
+                    lambda: asyncio.run_coroutine_threadsafe(
+                        self.read(name), loop
+                    ) == value),
+                # cond.wait_for(lambda: True),
+                timeout
+            )
+
+        await self._subscription.unsubscribe(monitor_handle)
 
     async def on_change(
             self, name: str, callback: Callable[..., Union[None, Coroutine[Any, Any, None]]],
