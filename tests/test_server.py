@@ -204,10 +204,8 @@ async def test_server_on_change_async_cbk(mock_server: MockServer, opcua_client:
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize('expected_value', random.choices(range(1000), k=5))
-async def test_server_on_change_write_server_from_async_cbk(
-        mock_server: MockServer, opcua_client: asyncua.Client, expected_value: int
-):
+async def test_server_on_change_write_server_from_async_cbk(mock_server: MockServer, opcua_client: asyncua.Client):
+    expected_value = random.randint(1, 500)
     await mock_server.write(0, "Var2")
 
     async def cbk(val):
