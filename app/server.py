@@ -245,17 +245,12 @@ class MockServer:
         cond = await self._notification_handler.register_notify(node_to_watch.nodeid)
         monitor_handle = await self._subscription.subscribe_data_change(node_to_watch)
 
-        asyncio.create_task(self._debug())
         await asyncio.wait_for(
             self._wait_for_value_read(name, value, cond),
             timeout
         )
 
         await self._subscription.unsubscribe(monitor_handle)
-
-    async def _debug(self):
-        while True:
-            await asyncio.sleep(1)
 
     async def _wait_for_value_read(self, name: str, value: Any, change_notification: Condition):
         read = None

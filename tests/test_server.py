@@ -148,3 +148,7 @@ async def test_server_wait_for_predicate_fulfilled(mock_server: MockServer, opcu
     # Write the expected value and check for it
     await mock_server.write(100, "Var2")
     await wait_task
+
+
+@pytest.mark.asyncio
+async def test_server_
