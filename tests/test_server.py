@@ -1,11 +1,15 @@
 import asyncio
 import logging
+import threading
+import random
 from typing import Tuple
 
 import pytest
 import asyncua
+from asyncio import Queue, Event
 from asyncua import Node
 from asyncua.ua import QualifiedName
+from asyncua.ua.uaerrors import BadUserAccessDenied
 
 from app.server import MockServer
 
@@ -122,6 +126,17 @@ async def test_server_write_nonexistent_node_by_id(mock_server: MockServer, opcu
 
 
 @pytest.mark.asyncio
+async def test_server_external_write_write_enabled(mock_server: MockServer, opcua_client: asyncua.Client):
+    await opcua_client.get_node("ns=1;i=10001").write_value(0)
+
+
+@pytest.mark.asyncio
+async def test_server_external_write_write_disabled(mock_server: MockServer, opcua_client: asyncua.Client):
+    with pytest.raises(BadUserAccessDenied):
+        await opcua_client.get_node("ns=1;i=10002").write_value(0)
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize('n', range(5))
 async def test_server_wait_for_predicate_not_fulfilled(mock_server: MockServer, opcua_client: asyncua.Client, n):
     await mock_server.write(0, "Var2")
@@ -151,4 +166,58 @@ async def test_server_wait_for_predicate_fulfilled(mock_server: MockServer, opcu
 
 
 @pytest.mark.asyncio
-async def test_server_
+async def test_server_on_change_sync_cbk(mock_server: MockServer, opcua_client: asyncua.Client):
+    await mock_server.write(0, "Var2")
+
+    evt = threading.Event()
+    await mock_server.on_change(
+        "Var2", lambda _: evt.set()
+    )
+
+    assert not evt.is_set()
+
+    await opcua_client.get_node("ns=1;i=10001").write_value(100)
+    evt.wait(1)
+    assert evt.is_set()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('n', range(5))
+async def test_server_on_change_write_server_from_async_cbk(mock_server: MockServer, opcua_client: asyncua.Client, n):
+    await mock_server.write(0, "Var2")
+
+    event = Event()
+
+    async def cbk(val):
+        if val == 100:
+            event.set()
+
+    await mock_server.on_change(
+        "Var2", cbk
+    )
+
+    await opcua_client.get_node("ns=1;i=10001").write_value(100)
+    await asyncio.wait_for(event.wait(), 1)
+
+    assert event.is_set()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('expected_value', random.choices(range(1000), k=5))
+async def test_server_on_change_write_server_from_async_cbk(
+        mock_server: MockServer, opcua_client: asyncua.Client, expected_value: int
+):
+    await mock_server.write(0, "Var2")
+
+    async def cbk(val):
+        if val == 100:
+            await mock_server.write(expected_value, "Var2")
+
+    await mock_server.on_change(
+        "Var2", cbk
+    )
+
+    await opcua_client.get_node("ns=1;i=10001").write_value(100)
+    await mock_server.wait_for("Var2", expected_value, 1)
+
+    assert (await mock_server.read("Var2")) == expected_value

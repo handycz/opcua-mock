@@ -12,6 +12,8 @@ from asyncua.ua import NodeId, QualifiedName, DataChangeNotification
 from asyncua.ua.uaerrors import BadNoMatch, BadNodeIdUnknown
 from yaml import Loader
 
+from app.utils import lazyeval
+
 
 class MockFunction:
     _logger: logging.Logger
@@ -30,7 +32,10 @@ class MockFunction:
         self._loop = asyncio.get_event_loop()
 
     def call(self, arg_list: List[Any]):
-        self._logger.info("Calling method % with args %", self._name, lambda: ", ".join(arg_list))
+        self._logger.info("Calling method %s with args %s", self._name, lazyeval(
+                lambda: ", ".join((str(a) for a in arg_list))
+            )
+        )
 
         if self._loop is None:
             raise RuntimeError("Loop was not defined, init was probably not called")
@@ -40,18 +45,20 @@ class MockFunction:
             num += 1
 
             if arg_type is None:
-                self._logger.info("Skipping argument type check for argument number %", num)
+                self._logger.info("Skipping argument type check for argument number %s", num)
+                continue
 
             if not isinstance(arg, arg_type):
                 raise TypeError(f"Wrong type of argument number {num}, expected {arg_type} got {type(arg)}")
 
         try:
             if asyncio.iscoroutinefunction(self._callback):
-                self._loop.call_soon_threadsafe(self._callback, *arg_list)
+                self._logger.debug("Calling coroutine")
+                asyncio.run_coroutine_threadsafe(self._callback(*arg_list), self._loop)
             else:
                 self._callback(*arg_list)
         except Exception as e:
-            raise TypeError("An error occured during the function call", e)
+            raise TypeError("An error occurred during the function call", e)
 
 
 class NotificationHandler(SubHandler):
@@ -147,11 +154,14 @@ class MockServer:
                 await self._create_node_level(node_description["value"], obj)
 
             elif node_type == "variable":
-                await parent.add_variable(
+                var = await parent.add_variable(
                     nodeid,
                     browsename,
                     node_description["value"]
                 )
+
+                if "writable" in node_description and node_description["writable"]:
+                    await var.set_writable(True)
 
             else:
                 raise ValueError(f"Unknown node type {node_type}")
@@ -259,7 +269,7 @@ class MockServer:
                 read = await self.read(name)
 
     async def on_change(
-            self, name: str, callback: Callable[..., Union[None, Coroutine[Any, Any, None]]],
+            self, name: str, callback: Callable[[Any], Union[None, Coroutine[Any, Any, None]]],
             arg_type: type = None
     ) -> None:
         node_to_watch = await self._browse_path(name)
@@ -271,6 +281,8 @@ class MockServer:
                 [arg_type]
             )
         )
+        # todo: save the subscription handle to allow de-registration
+        await self._subscription.subscribe_data_change(node_to_watch)
 
     async def on_call(
             self, name: str, callback: Callable[..., Union[None, Coroutine[Any, Any, None]]],
