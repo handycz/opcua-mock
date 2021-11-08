@@ -127,12 +127,12 @@ async def test_server_wait_for_predicate_not_fulfilled(mock_server: MockServer, 
     await mock_server.write(0, "Var2")
 
     wait_task = asyncio.create_task(
-        mock_server.wait_for("Var2", 100, 1)
+        mock_server.wait_for("Var2", 100, 0.2)
     )
 
     # Write some other value and check if the wait is not triggered
     await mock_server.write(10, "Var2")
-    with pytest.raises(TimeoutError):
+    with pytest.raises(asyncio.TimeoutError):
         await wait_task
 
 

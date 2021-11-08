@@ -175,7 +175,8 @@ class MockServer:
                 value = await self._server.get_node(nodeid).read_value()
             elif name is not None:
                 node = await self._browse_path(name)
-                value = await node.read_value()
+                # fixme: await node.read_value() blocks when used in the MockServer.wait_for().. why?
+                value = await asyncio.create_task(node.read_value())
             else:
                 raise ValueError("Either name or nodeid has to be specified")
         except (BadNoMatch, BadNodeIdUnknown) as e:
@@ -244,12 +245,17 @@ class MockServer:
         cond = await self._notification_handler.register_notify(node_to_watch.nodeid)
         monitor_handle = await self._subscription.subscribe_data_change(node_to_watch)
 
+        asyncio.create_task(self._debug())
         await asyncio.wait_for(
             self._wait_for_value_read(name, value, cond),
             timeout
         )
 
         await self._subscription.unsubscribe(monitor_handle)
+
+    async def _debug(self):
+        while True:
+            await asyncio.sleep(1)
 
     async def _wait_for_value_read(self, name: str, value: Any, change_notification: Condition):
         read = None
