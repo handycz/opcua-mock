@@ -1,3 +1,4 @@
+import datetime
 import itertools
 import logging
 from typing import Any, Union, Coroutine, Callable, Dict, List, Iterable, Tuple
@@ -13,6 +14,20 @@ from asyncua.ua.uaerrors import BadNoMatch, BadNodeIdUnknown
 from yaml import Loader
 
 from app.utils import lazyeval
+
+
+class FunctionDescription:
+    name: str
+    args: List[type]
+
+
+class OnChangeDescription:
+    class OnChangeDescriptionSample:
+        timestamp: datetime.datetime
+        value: Any
+
+    var_name: str
+    history: Iterable[OnChangeDescriptionSample]
 
 
 class MockFunction:
@@ -307,3 +322,12 @@ class MockServer:
             raise ValueError("Unknown callable")
 
         self._functions[name].call(args)
+
+    async def get_data_image(self) -> Dict[str, Any]:
+        pass
+
+    async def get_function_list(self) -> List[FunctionDescription]:
+        pass
+
+    async def get_onchange_list(self) -> List[OnChangeDescription]:
+        pass
