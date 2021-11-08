@@ -1,6 +1,6 @@
 import itertools
 import logging
-from typing import Any, Union, Coroutine, Callable, Dict, List
+from typing import Any, Union, Coroutine, Callable, Dict, List, Iterable, Tuple
 
 import asyncio
 import yaml
@@ -19,11 +19,11 @@ class MockFunction:
     _logger: logging.Logger
     _name: str
     _callback: Callable[..., Union[None, Coroutine[Any, Any, None]]]
-    _arg_types: List[type]
+    _arg_types: Iterable[type]
     _loop: AbstractEventLoop
 
     def __init__(
-            self, name: str, callback: Callable[..., Union[None, Coroutine[Any, Any, None]]], arg_types: List[type]
+            self, name: str, callback: Callable[..., Union[None, Coroutine[Any, Any, None]]], arg_types: Iterable[type]
     ):
         self._logger = logging.getLogger(__name__)
         self._name = name
@@ -31,7 +31,7 @@ class MockFunction:
         self._arg_types = arg_types
         self._loop = asyncio.get_event_loop()
 
-    def call(self, arg_list: List[Any]):
+    def call(self, arg_list: Tuple[Any]):
         self._logger.info("Calling method %s with args %s", self._name, lazyeval(
                 lambda: ", ".join((str(a) for a in arg_list))
             )
@@ -41,7 +41,12 @@ class MockFunction:
             raise RuntimeError("Loop was not defined, init was probably not called")
 
         num = 0
-        for arg_type, arg in itertools.zip_longest(self._arg_types, arg_list):
+        if self._arg_types is None:
+            arg_types = [None] * len(arg_list)
+        else:
+            arg_types = self._arg_types
+
+        for arg_type, arg in itertools.zip_longest(arg_types, arg_list):
             num += 1
 
             if arg_type is None:
@@ -284,20 +289,20 @@ class MockServer:
         # todo: save the subscription handle to allow de-registration
         await self._subscription.subscribe_data_change(node_to_watch)
 
-    async def on_call(
-            self, name: str, callback: Callable[..., Union[None, Coroutine[Any, Any, None]]],
-            arg_types: List[type] = None
+    def on_call(
+            self, function_name: str, callback: Callable[..., Union[None, Coroutine[Any, Any, None]]],
+            arg_types: Iterable[type] = None
     ) -> None:
-        if name in self._functions:
+        if function_name in self._functions:
             raise ValueError("Callable already exists")
 
-        self._functions[name] = MockFunction(
-            name,
+        self._functions[function_name] = MockFunction(
+            function_name,
             callback,
             arg_types
         )
 
-    async def call(self, name: str, args: List[Any]):
+    async def call(self, name: str, *args: Any):
         if name not in self._functions:
             raise ValueError("Unknown callable")
 
