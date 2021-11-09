@@ -1,7 +1,8 @@
 import datetime
 import itertools
 import logging
-from typing import Any, Union, Coroutine, Callable, Dict, List, Iterable, Tuple
+from dataclasses import dataclass
+from typing import Any, Union, Coroutine, Callable, Dict, List, Iterable, Tuple, Set
 
 import asyncio
 import yaml
@@ -9,25 +10,29 @@ from asyncio import Event, AbstractEventLoop, Condition
 from asyncua import Server, Node
 from asyncua.common.subscription import Subscription
 from asyncua.tools import SubHandler
-from asyncua.ua import NodeId, QualifiedName, DataChangeNotification
+from asyncua.ua import NodeId, QualifiedName, DataChangeNotification, DataValue
 from asyncua.ua.uaerrors import BadNoMatch, BadNodeIdUnknown
 from yaml import Loader
 
 from app.utils import lazyeval
 
 
+@dataclass
 class FunctionDescription:
     name: str
-    args: List[type]
+    args: Iterable[type]
 
 
+@dataclass
+class HistorySample:
+    value: Any
+    timestamp: datetime.datetime
+
+
+@dataclass
 class OnChangeDescription:
-    class OnChangeDescriptionSample:
-        timestamp: datetime.datetime
-        value: Any
-
     var_name: str
-    history: Iterable[OnChangeDescriptionSample]
+    history: Iterable[HistorySample]
 
 
 class MockFunction:
@@ -36,6 +41,10 @@ class MockFunction:
     _callback: Callable[..., Union[None, Coroutine[Any, Any, None]]]
     _arg_types: Iterable[type]
     _loop: AbstractEventLoop
+
+    @property
+    def args(self) -> Iterable[type]:
+        return list(self._arg_types)
 
     def __init__(
             self, name: str, callback: Callable[..., Union[None, Coroutine[Any, Any, None]]], arg_types: Iterable[type]
@@ -85,11 +94,17 @@ class NotificationHandler(SubHandler):
     _logger: logging.Logger
     _notify: Dict[NodeId, Condition]
     _callbacks: Dict[NodeId, List[MockFunction]]
+    _nodes_watched_for_change: Set[str]
+
+    @property
+    def nodes_watched_for_change(self) -> Iterable[str]:
+        return set(self._nodes_watched_for_change)
 
     def __init__(self):
         self._logger = logging.getLogger(__name__)
         self._notify = dict()
         self._callbacks = dict()
+        self._nodes_watched_for_change = set()
 
     async def register_notify(self, node_id: NodeId) -> Condition:
         # TODO: clean this up after it's not needed... maybe by a weak ref dict?
@@ -99,12 +114,13 @@ class NotificationHandler(SubHandler):
         self._notify[node_id] = Condition()
         return self._notify[node_id]
 
-    def register_callback(self, node_id: NodeId, callback: MockFunction):
+    def register_callback(self, node_name: str, node_id: NodeId, callback: MockFunction):
         if node_id not in self._callbacks:
             self._callbacks[node_id] = list()
 
         if callback not in self._callbacks[node_id]:
             self._callbacks[node_id].append(callback)
+            self._nodes_watched_for_change.add(node_name)
         else:
             self._logger.warning("Mock function already registered, ignoring")
 
@@ -126,6 +142,7 @@ class MockServer:
     _server: Server
     _config_path: str
     _functions: Dict[str, MockFunction]
+    _node_name_list: List[str]
     _notification_handler: NotificationHandler
     _subscription: Subscription
 
@@ -135,6 +152,7 @@ class MockServer:
         self._config_path = config_path
         self._functions = dict()
         self._notification_handler = NotificationHandler()
+        self._node_name_list = list()
 
     async def init(self):
         await self._server.init()
@@ -144,7 +162,7 @@ class MockServer:
         self._server.set_endpoint(config["server"]["endpoint"])
         self._server.set_server_name(config["server"]["name"])
         await self._create_namespaces(config["server"]["namespaces"])
-        await self._create_node_level(config["nodes"], self._server.get_objects_node())
+        await self._create_node_level(config["nodes"], self._server.get_objects_node(), "")
 
     async def __aenter__(self):
         await self._server.start()
@@ -157,31 +175,42 @@ class MockServer:
             self._logger.debug("Adding namespace %s", ns)
             await self._server.register_namespace(ns)
 
-    async def _create_node_level(self, nodes: Dict[str, Any], parent: Node):
+    async def _create_node_level(self, nodes: Dict[str, Any], parent: Node, parent_name: str):
         for node_description in nodes:
             node_description: Dict[str, Any]
 
             node_type = node_description["type"].lower()
-
             nodeid = NodeId.from_string(node_description["nodeid"])
             browsename = QualifiedName(node_description["name"], nodeid.NamespaceIndex)
+            value: Union[Any, Dict[str, Any]] = node_description["value"]
+            writable: bool = node_description["writable"] if "writable" in node_description else False
+            full_name = browsename.to_string() if parent_name == "" else parent_name + "/" + browsename.to_string()
+            hist_count: int = node_description["samples"] if "samples" in node_description else 10
 
             if node_type == "object":
                 obj = await parent.add_object(
                     nodeid,
                     browsename
                 )
-                await self._create_node_level(node_description["value"], obj)
+                await self._create_node_level(
+                    value, obj, full_name
+                )
 
             elif node_type == "variable":
                 var = await parent.add_variable(
                     nodeid,
                     browsename,
-                    node_description["value"]
+                    value
                 )
 
-                if "writable" in node_description and node_description["writable"]:
+                if writable:
                     await var.set_writable(True)
+                    self._logger.info("Node %s is writable", full_name)
+
+                await self._server.historize_node_data_change(var, period=None, count=hist_count)
+                self._logger.info("Node %s is historized (count: %s)", full_name, hist_count)
+
+                self._node_name_list.append(full_name)
 
             else:
                 raise ValueError(f"Unknown node type {node_type}")
@@ -192,7 +221,7 @@ class MockServer:
 
     async def read(self, name: str = None, nodeid: str = None) -> Any:
         """
-        Writes a value of a variable given by its name or nodeid. The name of the
+        Reads a value of a variable given by its name or nodeid. The name of the
         variable is a string of node names in the browse path separated by slashes relative
         to the objects node. If a parent has multiple nodes of the same name in
         different namespaces, the namespace can be specified as "<namespace idx>:<node name>".
@@ -214,6 +243,34 @@ class MockServer:
 
         self._logger.info("Read value of %s = %s", name, value)
         return value
+
+    async def read_history(self, name: str = None, nodeid: str = None, num_values: int = 0) -> List[HistorySample]:
+        """
+        Reads a value of a variable given by its name or nodeid. The name of the
+        variable is a string of node names in the browse path separated by slashes relative
+        to the objects node. If a parent has multiple nodes of the same name in
+        different namespaces, the namespace can be specified as "<namespace idx>:<node name>".
+        Example of the browse path is "MainFolder/ParentObject/3:MyVariable".
+        :param name: path to the variable
+        :param nodeid: nodeid of the variable
+        :param num_values: number of history values to read (0 for all values)
+        """
+        try:
+            if nodeid is not None:
+                raw_values: List[DataValue] = await self._server.get_node(nodeid).read_raw_history(numvalues=num_values)
+            elif name is not None:
+                node = await self._browse_path(name)
+                # fixme: await node.read_value() blocks when used in the MockServer.wait_for().. why?
+                raw_values: List[DataValue] = await node.read_raw_history(numvalues=num_values)
+            else:
+                raise ValueError("Either name or nodeid has to be specified")
+        except (BadNoMatch, BadNodeIdUnknown) as e:
+            raise ValueError("Unknown variable identifier", e)
+
+        values = [HistorySample(value.Value.Value, value.ServerTimestamp) for value in raw_values]
+
+        self._logger.info("Read history of %s, len = %s", name, len(values))
+        return values
 
     async def write(self, value: Any, name: str = None, nodeid: str = None) -> None:
         """
@@ -294,6 +351,7 @@ class MockServer:
     ) -> None:
         node_to_watch = await self._browse_path(name)
         self._notification_handler.register_callback(
+            name,
             node_to_watch.nodeid,
             MockFunction(
                 name,
@@ -324,10 +382,34 @@ class MockServer:
         self._functions[name].call(args)
 
     async def get_data_image(self) -> Dict[str, Any]:
-        pass
+        data_img = dict()
+
+        for node_name in self._node_name_list:
+            data_img[node_name] = await self.read(node_name)
+
+        return data_img
 
     async def get_function_list(self) -> List[FunctionDescription]:
-        pass
+        fcn_list = list()
+
+        for name, func in self._functions.items():
+            fcn_list.append(
+                FunctionDescription(
+                    name,
+                    func.args
+                )
+            )
+
+        return fcn_list
 
     async def get_onchange_list(self) -> List[OnChangeDescription]:
-        pass
+        onchange_list = list()
+
+        for node_name in self._notification_handler.nodes_watched_for_change:
+            onchange_list.append(
+                OnChangeDescription(
+                    node_name,
+
+                )
+            )
+
