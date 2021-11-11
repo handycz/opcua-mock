@@ -409,7 +409,8 @@ class MockServer:
             onchange_list.append(
                 OnChangeDescription(
                     node_name,
-
+                    await self.read_history(name=node_name)
                 )
             )
 
+        return onchange_list
