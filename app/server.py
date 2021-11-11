@@ -2,11 +2,11 @@ import datetime
 import itertools
 import logging
 from dataclasses import dataclass
-from typing import Any, Union, Coroutine, Callable, Dict, List, Iterable, Tuple, Set
+from typing import Any, Union, Coroutine, Callable, Dict, List, Iterable, Tuple, Set, Optional
 
 import asyncio
 import yaml
-from asyncio import Event, AbstractEventLoop, Condition
+from asyncio import AbstractEventLoop, Condition
 from asyncua import Server, Node
 from asyncua.common.subscription import Subscription
 from asyncua.tools import SubHandler
@@ -43,7 +43,10 @@ class MockFunction:
     _loop: AbstractEventLoop
 
     @property
-    def args(self) -> Iterable[type]:
+    def args(self) -> Optional[Iterable[type]]:
+        if self._arg_types is None:
+            return None
+
         return list(self._arg_types)
 
     def __init__(
@@ -90,6 +93,7 @@ class MockFunction:
             raise TypeError("An error occurred during the function call", e)
 
 
+# todo: proper subscription management... count active subscriptions and un-subscribe or re-subscribe when necessary
 class NotificationHandler(SubHandler):
     _logger: logging.Logger
     _notify: Dict[NodeId, Condition]
@@ -346,15 +350,15 @@ class MockServer:
                 read = await self.read(name)
 
     async def on_change(
-            self, name: str, callback: Callable[[Any], Union[None, Coroutine[Any, Any, None]]],
+            self, var_name: str, callback: Callable[[Any], Union[None, Coroutine[Any, Any, None]]],
             arg_type: type = None
     ) -> None:
-        node_to_watch = await self._browse_path(name)
+        node_to_watch = await self._browse_path(var_name)
         self._notification_handler.register_callback(
-            name,
+            var_name,
             node_to_watch.nodeid,
             MockFunction(
-                name,
+                var_name,
                 callback,
                 [arg_type]
             )
