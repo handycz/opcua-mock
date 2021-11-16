@@ -36,6 +36,7 @@ async def history_mock_server():
         for val in range(15):
             await server.write(val, "Var1")
             await server.write(val, "Var2")
+        await asyncio.sleep(0.1)
 
         yield server
 

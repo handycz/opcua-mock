@@ -271,7 +271,11 @@ class MockServer:
         except (BadNoMatch, BadNodeIdUnknown) as e:
             raise ValueError("Unknown variable identifier", e)
 
-        values = [HistorySample(value.Value.Value, value.ServerTimestamp) for value in raw_values]
+        values = [
+            HistorySample(
+                value.Value.Value, value.SourceTimestamp.replace(tzinfo=datetime.timezone.utc)
+            ) for value in raw_values
+        ]
 
         self._logger.info("Read history of %s, len = %s", name, len(values))
         return values
