@@ -1,14 +1,17 @@
 import datetime
 import itertools
 import logging
-from dataclasses import dataclass
+
+from pydantic.dataclasses import dataclass
 from typing import Any, Union, Coroutine, Callable, Dict, List, Iterable, Tuple, Set, Optional
+
 
 import asyncio
 import yaml
 from asyncio import AbstractEventLoop, Condition
-from asyncua import Server, Node
+from asyncua import Server, Node, ua
 from asyncua.common.subscription import Subscription
+from asyncua.server.history import HistoryStorageInterface, UaNodeAlreadyHistorizedError
 from asyncua.tools import SubHandler
 from asyncua.ua import NodeId, QualifiedName, DataChangeNotification, DataValue
 from asyncua.ua.uaerrors import BadNoMatch, BadNodeIdUnknown
@@ -20,7 +23,7 @@ from app.utils import lazyeval
 @dataclass
 class FunctionDescription:
     name: str
-    args: Iterable[type]
+    args: Optional[List[str]]
 
 
 @dataclass
@@ -32,7 +35,13 @@ class HistorySample:
 @dataclass
 class OnChangeDescription:
     var_name: str
-    history: Iterable[HistorySample]
+    history: List[HistorySample]
+
+
+@dataclass
+class DataImageItemValue:
+    value: Any
+    history: List[HistorySample]
 
 
 class MockFunction:
@@ -141,6 +150,89 @@ class NotificationHandler(SubHandler):
                 func.call([val])
 
 
+class SimpleDataHistoryDict(HistoryStorageInterface):
+    """
+    Very minimal history backend storing data in memory using a Python dictionary
+    """
+
+    def __init__(self, max_history_data_response_size=10000):
+        self.max_history_data_response_size = max_history_data_response_size
+        self._datachanges = {}
+        self._datachanges_period = {}
+        self._events = {}
+        self._events_periods = {}
+
+    async def init(self):
+        pass
+
+    async def new_historized_node(self, node_id, period, count=0):
+        if node_id in self._datachanges:
+            raise UaNodeAlreadyHistorizedError(node_id)
+        self._datachanges[node_id] = []
+        self._datachanges_period[node_id] = period, count
+
+    async def save_node_value(self, node_id, datavalue):
+        data = self._datachanges[node_id]
+        period, count = self._datachanges_period[node_id]
+        data.append(datavalue)
+        now = datetime.datetime.utcnow()
+        if period:
+            while len(data) and now - data[0].SourceTimestamp > period:
+                data.pop(0)
+        if count and len(data) > count:
+            data.pop(0)
+
+    async def read_node_history(self, node_id, start, end, nb_values):
+        cont = None
+        if node_id not in self._datachanges:
+            # logger.warning("Error attempt to read history for a node which is not historized")
+            return [], cont
+        else:
+            if start is None:
+                start = ua.get_win_epoch()
+            if end is None:
+                end = ua.get_win_epoch()
+            if start == ua.get_win_epoch():
+                print(self._datachanges[node_id])
+
+                results = [
+                    dv
+                    for dv in reversed(self._datachanges[node_id])
+                ]
+            elif end == ua.get_win_epoch():
+                results = [dv for dv in self._datachanges[node_id]]
+            elif start > end:
+                results = [
+                    dv
+                    for dv in reversed(self._datachanges[node_id])
+                ]
+
+            else:
+                results = [
+                    dv for dv in self._datachanges[node_id]
+                ]
+
+            if nb_values and len(results) > nb_values:
+                results = results[:nb_values]
+
+            if len(results) > self.max_history_data_response_size:
+                cont = results[self.max_history_data_response_size + 1].SourceTimestamp
+                results = results[:self.max_history_data_response_size]
+            return results, cont
+
+    async def new_historized_event(self, source_id, evtypes, period, count=0):
+        raise NotImplementedError()
+
+    async def save_event(self, event):
+        raise NotImplementedError()
+
+    async def read_event_history(self, source_id, start, end, nb_values, evfilter):
+        raise NotImplementedError()
+
+    async def stop(self):
+        pass
+
+
 class MockServer:
     _logger: logging.Logger
     _server: Server
@@ -159,6 +251,7 @@ class MockServer:
         self._node_name_list = list()
 
     async def init(self):
+        self._server.iserver.history_manager.set_storage(SimpleDataHistoryDict())
         await self._server.init()
         config = self._read_config()
         self._subscription = await self._server.create_subscription(10, self._notification_handler)
@@ -172,6 +265,12 @@ class MockServer:
         await self._server.start()
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
+        await self._server.stop()
+
+    async def start(self):
+        await self._server.start()
+
+    async def stop(self):
         await self._server.stop()
 
     async def _create_namespaces(self, namespaces: List[str]):
@@ -274,6 +373,7 @@ class MockServer:
         values = [
             HistorySample(
                 value.Value.Value, value.SourceTimestamp.replace(tzinfo=datetime.timezone.utc)
+                if value.SourceTimestamp else None
             ) for value in raw_values
         ]
 
@@ -370,7 +470,7 @@ class MockServer:
         # todo: save the subscription handle to allow de-registration
         await self._subscription.subscribe_data_change(node_to_watch)
 
-    def on_call(
+    async def on_call(
             self, function_name: str, callback: Callable[..., Union[None, Coroutine[Any, Any, None]]],
             arg_types: Iterable[type] = None
     ) -> None:
@@ -389,11 +489,15 @@ class MockServer:
 
         self._functions[name].call(args)
 
-    async def get_data_image(self) -> Dict[str, Any]:
+    async def get_data_image(self) -> Dict[str, DataImageItemValue]:
         data_img = dict()
 
         for node_name in self._node_name_list:
-            data_img[node_name] = await self.read(node_name)
+            hist = await self.read_history(node_name)
+            data_img[node_name] = DataImageItemValue(
+                value=hist[0].value,
+                history=hist
+            )
 
         return data_img
 
@@ -404,7 +508,7 @@ class MockServer:
             fcn_list.append(
                 FunctionDescription(
                     name,
-                    func.args
+                    [arg.__name__ for arg in func.args] if func.args is not None else None
                 )
             )
 

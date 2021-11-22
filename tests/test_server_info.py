@@ -18,13 +18,13 @@ async def test_server_read_data_image(mock_server: MockServer):
 
 @pytest.mark.asyncio
 async def test_server_list_functions(mock_server: MockServer):
-    mock_server.on_call(
+    await mock_server.on_call(
         "RunRobotThreeArgs", lambda: None, (int, int, str)
     )
 
     functions1 = await mock_server.get_function_list()
 
-    mock_server.on_call(
+    await mock_server.on_call(
         "StopRobotNoArg", lambda: None
     )
 

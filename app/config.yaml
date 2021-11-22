@@ -5,11 +5,21 @@ server:
         - http://my.namespace
         - http://someother.namespace
 nodes:
-    - nodeid: ns=1;i=1234
-      name: MyVar
+    - nodeid: ns=1;i=10000
+      name: Var1
       value: 15
       type: variable
-    - nodeid: ns=1;i=431
-      name: YoursVar
+    - nodeid: ns=1;i=10001
+      name: Var2
       value: 11
       type: variable
+      writable: true
+      samples: 15
+    - nodeid: ns=1;i=10002
+      name: Obj
+      type: object
+      value:
+        - nodeid: ns=2;i=20001
+          name: Var3
+          value: 101
+          type: variable

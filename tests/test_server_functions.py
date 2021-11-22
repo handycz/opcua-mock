@@ -11,7 +11,7 @@ from app.server import MockServer
 async def test_server_call_sync_function(mock_server: MockServer, opcua_client: asyncua.Client):
     q = queue.Queue()
 
-    mock_server.on_call(
+    await mock_server.on_call(
         "MyLittleFunction",
         lambda x, y, z: q.put((x, y, z)),
         arg_types=(int, int, float)
@@ -29,7 +29,7 @@ async def test_server_call_async_function(mock_server: MockServer, opcua_client:
     async def cbk(x, y, z):
         await q.put((x, y, z))
 
-    mock_server.on_call(
+    await mock_server.on_call(
         "MyLittleAsyncFunction",
         cbk,
         arg_types=(int, int, float)
@@ -45,7 +45,7 @@ async def test_server_call_wrong_arg_type(mock_server: MockServer, opcua_client:
     async def cbk(x, y, z):
         pass
 
-    mock_server.on_call(
+    await mock_server.on_call(
         "MyLittleAsyncFunctionWithStrictTypes",
         cbk,
         arg_types=(int, int, int)
@@ -62,7 +62,7 @@ async def test_server_call_ignoring_one_arg_type(mock_server: MockServer, opcua_
     async def cbk(x, y, z):
         await q.put((x, y, z))
 
-    mock_server.on_call(
+    await mock_server.on_call(
         "MyLittleAsyncFunctionWithPartiallyStrictTypeCheck",
         cbk,
         arg_types=(int, int, None)
@@ -80,7 +80,7 @@ async def test_server_call_ignoring_arg_types(mock_server: MockServer, opcua_cli
     async def cbk(x, y, z):
         await q.put((x, y, z))
 
-    mock_server.on_call(
+    await mock_server.on_call(
         "MyLittleAsyncFunctionWithUnrestrictedTypeCheck",
         cbk,
         arg_types=None
@@ -99,7 +99,7 @@ async def test_server_call_write_server_from_callback(mock_server: MockServer, o
         await mock_server.write(x, "Var2")
         evt.set()
 
-    mock_server.on_call(
+    await mock_server.on_call(
         "MyLittleAsyncFunctionThatWritesServer",
         cbk,
         arg_types=None
