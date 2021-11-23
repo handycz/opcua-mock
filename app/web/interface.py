@@ -1,15 +1,18 @@
 import asyncio
+import logging
 from threading import Thread
 from typing import List, Dict
 
 import uvicorn
-from fastapi import FastAPI, APIRouter
+from fastapi import FastAPI, APIRouter, HTTPException
+from fastapi.openapi.models import Response
 
 from app.server import MockServer, OnChangeDescription, FunctionDescription, DataImageItemValue
 
 
 def create_web_interface(opcua: MockServer) -> FastAPI:
     router = APIRouter()
+    logger = logging.getLogger(__name__)
 
     @router.get("/data", response_model=Dict[str, DataImageItemValue])
     async def get_data():
@@ -24,9 +27,19 @@ def create_web_interface(opcua: MockServer) -> FastAPI:
     async def list_watched():
         return await opcua.get_onchange_list()
 
-        # return OnchangeDescriptionItemModel.parse_obj(
-        #     await opcua.get_onchange_list()
-        # )
+    @router.post("/call/{function_name}")
+    async def call_function(function_name: str, parameters: List[str]):
+        try:
+            await opcua.call(function_name, *parameters, auto_cast_types=True)
+        except ValueError as e:
+            logger.error("Error when calling function", e)
+            raise HTTPException(status_code=404, detail="Unknown callable")
+        except TypeError as e:
+            logger.error("Wrong parameters provided", e)
+            raise HTTPException(status_code=406, detail="Wrong parameter types or length")
+
+        return {"status": "ok"}
+
 
     app = FastAPI()
     app.include_router(router, prefix="/api")
@@ -36,11 +49,14 @@ def create_web_interface(opcua: MockServer) -> FastAPI:
 
 async def create_server():
     server = MockServer("config.yaml")
+    loop = asyncio.get_running_loop()
     await server.init()
     await server.start()
     await server.on_call("CallMe", lambda: print("Hi!"))
     await server.on_call("CallMe2", lambda x: print("Hi, ", x), arg_types=[str, MockServer])
     await server.on_call("CallMe3", lambda: print("Hi!"), None)
+    await server.on_call("Add", lambda x, y: x+y, arg_types=[int, int])
+    await server.on_call("Start", lambda: loop.create_task(server.write(1234, "Var2")))
     await server.on_change("Var1", lambda _: None)
     await server.on_change("Var2", lambda _: None)
 

@@ -483,11 +483,36 @@ class MockServer:
             arg_types
         )
 
-    async def call(self, name: str, *args: Any):
+    async def call(self, name: str, *args: Any, auto_cast_types: bool = False):
+        self._logger.info("Calling function %s with args %s", name, args)
         if name not in self._functions:
             raise ValueError("Unknown callable")
 
+        expected_types = self._functions[name].args
+
+        if expected_types is not None and len(tuple(expected_types)) != len(args):
+            raise TypeError("Wrong parameter count")
+
+        if auto_cast_types:
+            args = await self._autocast_call_parameters(args, expected_types)
+
         self._functions[name].call(args)
+
+    async def _autocast_call_parameters(
+            self, passed_parameters: Tuple[Any], expected_types: Optional[List[type]]
+    ) -> Tuple[Any]:
+        if expected_types is None:
+            return passed_parameters
+
+        typed_args = list()
+        for expected_type, arg in zip(expected_types, passed_parameters):
+            self._logger.info("Auto casting %s to %s", arg, expected_type)
+            try:
+                typed_arg = expected_type(arg)
+            except ValueError as e:
+                raise TypeError(e)
+            typed_args.append(typed_arg)
+        return tuple(typed_args)
 
     async def get_data_image(self) -> Dict[str, DataImageItemValue]:
         data_img = dict()
