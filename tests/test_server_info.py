@@ -13,7 +13,8 @@ async def test_server_read_data_image(mock_server: MockServer):
         '1:Obj/2:Var3': 101
     })
 
-    assert data == expected
+    assert data.keys() == expected.keys()
+    assert [item.value for item in data.values()] == list(expected.values())
 
 
 @pytest.mark.asyncio
@@ -34,10 +35,10 @@ async def test_server_list_functions(mock_server: MockServer):
     assert len(functions2) == 2
 
     assert functions1[0].name == "RunRobotThreeArgs"
-    assert functions1[0].args == [int, int, str]
+    assert functions1[0].args == ["int", "int", "str"]
 
     assert functions2[0].name == "RunRobotThreeArgs"
-    assert functions2[0].args == [int, int, str]
+    assert functions2[0].args == ["int", "int", "str"]
 
     assert functions2[1].name == "StopRobotNoArg"
     assert functions2[1].args is None
