@@ -1,4 +1,4 @@
-from typing import Callable
+from typing import Callable, TYPE_CHECKING, Union, Any
 
 __all__ = ["lazyeval"]
 
