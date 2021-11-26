@@ -5,9 +5,10 @@ from typing import List, Dict
 
 import uvicorn
 from fastapi import FastAPI, APIRouter, HTTPException
-from fastapi.openapi.models import Response
 
 from app.server import MockServer, OnChangeDescription, FunctionDescription, DataImageItemValue
+
+__all__ = ["create_web_interface"]
 
 
 def create_web_interface(opcua: MockServer) -> FastAPI:
@@ -39,7 +40,6 @@ def create_web_interface(opcua: MockServer) -> FastAPI:
             raise HTTPException(status_code=406, detail="Wrong parameter types or length")
 
         return {"status": "ok"}
-
 
     app = FastAPI()
     app.include_router(router, prefix="/api")
