@@ -13,7 +13,7 @@ from asyncua import Server, Node, ua
 from asyncua.common.subscription import Subscription
 from asyncua.server.history import HistoryStorageInterface, UaNodeAlreadyHistorizedError
 from asyncua.tools import SubHandler
-from asyncua.ua import NodeId, QualifiedName, DataChangeNotification, DataValue
+from asyncua.ua import NodeId, QualifiedName, DataChangeNotification, DataValue, Variant, VariantType
 from asyncua.ua.uaerrors import BadNoMatch, BadNodeIdUnknown
 from yaml import Loader
 
@@ -193,8 +193,6 @@ class SimpleDataHistoryDict(HistoryStorageInterface):
             if end is None:
                 end = ua.get_win_epoch()
             if start == ua.get_win_epoch():
-                print(self._datachanges[node_id])
-
                 results = [
                     dv
                     for dv in reversed(self._datachanges[node_id])
@@ -345,7 +343,7 @@ class MockServer:
             raise ValueError("Unknown variable identifier", e)
 
         self._logger.info("Read value of %s = %s", name, value)
-        return value
+        return MockServer._convert_data_value(value)
 
     async def read_history(self, name: str = None, nodeid: str = None, num_values: int = 0) -> List[HistorySample]:
         """
@@ -372,13 +370,43 @@ class MockServer:
 
         values = [
             HistorySample(
-                value.Value.Value, value.SourceTimestamp.replace(tzinfo=datetime.timezone.utc)
+                MockServer._convert_data_value(value), value.SourceTimestamp.replace(tzinfo=datetime.timezone.utc)
                 if value.SourceTimestamp else None
             ) for value in raw_values
         ]
 
         self._logger.info("Read history of %s, len = %s", name, len(values))
         return values
+
+    @staticmethod
+    def _convert_data_value(data_value: DataValue):
+        convertible_types = [
+            VariantType.Byte,
+            VariantType.Boolean,
+            VariantType.Double,
+            VariantType.Float,
+            VariantType.Int16,
+            VariantType.Int32,
+            VariantType.Int64,
+            VariantType.UInt16,
+            VariantType.UInt32,
+            VariantType.UInt64,
+            VariantType.DateTime
+        ]
+
+        data_type = data_value.Value.VariantType
+        value = data_value.Value.Value
+
+        if data_type in convertible_types:
+            return value
+        elif data_type is VariantType.NodeId:
+            return value.to_string()
+        elif data_type is VariantType.LocalizedText:
+            return value.Text
+        elif data_type is VariantType.QualifiedName:
+            return value.Name
+        else:
+            return str(value)
 
     async def write(self, value: Any, name: str = None, nodeid: str = None) -> None:
         """
