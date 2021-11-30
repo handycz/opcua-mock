@@ -1,6 +1,8 @@
 import datetime
 import itertools
 import logging
+import os
+import re
 
 from pydantic.dataclasses import dataclass
 from typing import Any, Union, Coroutine, Callable, Dict, List, Iterable, Tuple, Set, Optional
@@ -17,7 +19,7 @@ from asyncua.ua import NodeId, QualifiedName, DataChangeNotification, DataValue,
 from asyncua.ua.uaerrors import BadNoMatch, BadNodeIdUnknown
 from yaml import Loader
 
-from app.utils import lazyeval
+from app.utils import lazyeval, PasswordUserManager, generate_and_write_certificates
 
 
 @dataclass
@@ -258,6 +260,86 @@ class MockServer:
         self._server.set_server_name(config["server"]["name"])
         await self._create_namespaces(config["server"]["namespaces"])
         await self._create_node_level(config["nodes"], self._server.get_objects_node(), "")
+        await self._set_security(config["server"])
+
+    async def _set_security(self, server_dict: Dict[str, Any]):
+        if "security" not in server_dict:
+            return
+
+        if "users" in server_dict["security"]:
+            await self._set_users(server_dict["security"]["users"])
+
+        if "policies" in server_dict["security"]:
+            await self._set_policies(server_dict["security"]["policies"])
+
+        if "profiles" in server_dict["security"]:
+            await self._set_profiles(server_dict["security"]["profiles"])
+
+    async def _set_users(self, users: List[Dict[str, str]]):
+        for record in users:
+            if "username" not in record:
+                self._logger.error("Field username not found in %s", record)
+                raise ValueError("Username is missing in an authentication record")
+
+            if "password" not in record:
+                self._logger.error("Field password not found in %s", record)
+                raise ValueError("Password is missing in an authentication record")
+
+            if re.search("^[a-zA-Z0-9]{64}$", record["password"]) is None:
+                self._logger.error("Field password is malformed in %s", record)
+                raise ValueError("Password is malformed in an authentication record")
+
+        self._server.iserver.user_manager = PasswordUserManager(users)
+        self._logger.info("Added user manager with %d users", len(users))
+
+    async def _set_policies(self, policies: List[str]):
+        available_policies = {
+            "NoSecurity": ua.SecurityPolicyType.NoSecurity,
+            "Basic256Sha256_Sign": ua.SecurityPolicyType.Basic256Sha256_Sign,
+            "Basic256Sha256_SignAndEncrypt": ua.SecurityPolicyType.Basic256Sha256_SignAndEncrypt,
+            "Basic256_SignAndEncrypt": ua.SecurityPolicyType.Basic256_SignAndEncrypt,
+            "Basic256_Sign": ua.SecurityPolicyType.Basic256_Sign,
+            "Basic128Rsa15_Sign": ua.SecurityPolicyType.Basic128Rsa15_Sign,
+            "Basic128Rsa15_SignAndEncrypt": ua.SecurityPolicyType.Basic128Rsa15_SignAndEncrypt
+        }
+
+        enum_policies = list()
+        cert_needed = False
+        for policy in policies:
+            if policy in available_policies:
+                self._logger.info("Adding %s policy", policy)
+                enum_policies.append(
+                    available_policies[policy]
+                )
+                cert_needed = cert_needed or (policy != "NoSecurity")
+            else:
+                self._logger.error("Selected policy %s not among available policies %s", policy, available_policies)
+                raise ValueError("Unknown policy")
+
+        if cert_needed:
+            await self._set_certificates("tmp/tmp.pem", "tmp/private_key.pem")
+
+        self._server.set_security_policy(enum_policies)
+
+    async def _set_certificates(self, cert_path: str, private_key_path: str):
+        if not os.path.exists(cert_path) or not os.path.exists(private_key_path):
+            self._logger.info("Generating certificate and private key")
+            generate_and_write_certificates("mockserver", cert_path, private_key_path)
+        else:
+            self._logger.info("Using existing certificate and private key")
+
+        await self._server.load_certificate(cert_path)
+        await self._server.load_private_key(private_key_path)
+
+    async def _set_profiles(self, profiles: List[str]):
+        available_profiles = ["Anonymous", "Username"]
+
+        for profile in profiles:
+            if profile not in available_profiles:
+                self._logger.error("Selected profile %s not among available profiles %s", profile, available_profiles)
+                raise ValueError("Unknown profile")
+
+        self._server.set_security_IDs(profiles)
 
     async def __aenter__(self):
         await self._server.start()
