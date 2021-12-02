@@ -98,8 +98,3 @@ async def _get_node_writable(node: Node) -> bool:
     user_access_level = await node.get_user_access_level()
 
     return access_level == AccessLevel.CurrentWrite and user_access_level == AccessLevel.CurrentWrite
-
-
-
-import asyncio
-asyncio.run(generate_server_config("opc.tcp://admin:Montrac2020@10.35.130.2:4840", r"C:\Users\novako19\PycharmProjects\opcua-mock\app\config2.yaml"))

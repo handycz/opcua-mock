@@ -31,7 +31,7 @@ class FunctionDescription:
 @dataclass
 class HistorySample:
     value: Any
-    timestamp: datetime.datetime
+    timestamp: Optional[datetime.datetime]
 
 
 @dataclass
@@ -97,7 +97,7 @@ class MockFunction:
         try:
             if asyncio.iscoroutinefunction(self._callback):
                 self._logger.debug("Calling coroutine")
-                asyncio.run_coroutine_threadsafe(self._callback(*arg_list), self._loop)
+                self._loop.create_task(self._callback(*arg_list))
             else:
                 self._callback(*arg_list)
         except Exception as e:
@@ -149,7 +149,11 @@ class NotificationHandler(SubHandler):
 
         if node.nodeid in self._callbacks:
             for func in self._callbacks[node.nodeid]:
-                func.call([val])
+                self._logger.info("Change callback for %s", node.nodeid)
+                try:
+                    func.call([val])
+                except Exception as e:
+                    self._logger.exception("Callback %s failed", func)
 
 
 class SimpleDataHistoryDict(HistoryStorageInterface):
@@ -475,6 +479,9 @@ class MockServer:
             VariantType.UInt64,
             VariantType.DateTime
         ]
+
+        if not isinstance(data_value, DataValue):
+            return data_value
 
         data_type = data_value.Value.VariantType
         value = data_value.Value.Value
