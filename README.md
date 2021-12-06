@@ -109,5 +109,3 @@ To interact with the server, object `MockServer` is used. Functions to be used b
 `wait_for`, `on_change`, `on_call` and `call`. 
 
 ### Using REST
-
-## Defining custom behavior
