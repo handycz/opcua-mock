@@ -19,29 +19,41 @@ from asyncua.ua import NodeId, QualifiedName, DataChangeNotification, DataValue,
 from asyncua.ua.uaerrors import BadNoMatch, BadNodeIdUnknown
 from yaml import Loader
 
-from app.utils import lazyeval, PasswordUserManager, generate_and_write_certificates
+from uamockapp.utils import lazyeval, PasswordUserManager, generate_and_write_certificates
 
 
 @dataclass
 class FunctionDescription:
+    """
+    Represents a function by its name and arguments
+    """
     name: str
     args: Optional[List[str]]
 
 
 @dataclass
 class HistorySample:
+    """
+    Single time-instance sample of a value
+    """
     value: Any
     timestamp: Optional[datetime.datetime]
 
 
 @dataclass
 class OnChangeDescription:
+    """
+    Represents a historized variable by its name and list of history samples :py:class:`uamockapp.server.HistorySample`
+    """
     var_name: str
     history: List[HistorySample]
 
 
 @dataclass
 class DataImageItemValue:
+    """
+    Represents a current and previous values of a variable.
+    """
     value: Any
     history: List[HistorySample]
 
@@ -352,9 +364,17 @@ class MockServer:
         await self._server.stop()
 
     async def start(self):
+        """
+        Starts the server
+        :return:
+        """
         await self._server.start()
 
     async def stop(self):
+        """
+        Stops the server
+        :return:
+        """
         await self._server.stop()
 
     async def _create_namespaces(self, namespaces: List[str]):
@@ -406,51 +426,39 @@ class MockServer:
         with open(self._config_path) as f:
             return yaml.load(f, Loader)
 
-    async def read(self, name: str = None, nodeid: str = None) -> Any:
+    async def read(self, name: str) -> Any:
         """
-        Reads a value of a variable given by its name or nodeid. The name of the
+        Reads a value of a variable given by its name. The name of the
         variable is a string of node names in the browse path separated by slashes relative
         to the objects node. If a parent has multiple nodes of the same name in
         different namespaces, the namespace can be specified as "<namespace idx>:<node name>".
         Example of the browse path is "MainFolder/ParentObject/3:MyVariable".
         :param name: path to the variable
-        :param nodeid: nodeid of the variable
         """
         try:
-            if nodeid is not None:
-                value = await self._server.get_node(nodeid).read_value()
-            elif name is not None:
-                node = await self._browse_path(name)
-                # fixme: await node.read_value() blocks when used in the MockServer.wait_for().. why?
-                value = await asyncio.create_task(node.read_value())
-            else:
-                raise ValueError("Either name or nodeid has to be specified")
+            node = await self._browse_path(name)
+            # fixme: await node.read_value() blocks when used in the MockServer.wait_for().. why?
+            value = await asyncio.create_task(node.read_value())
         except (BadNoMatch, BadNodeIdUnknown) as e:
             raise ValueError("Unknown variable identifier", e)
 
         self._logger.info("Read value of %s = %s", name, value)
         return MockServer._convert_data_value(value)
 
-    async def read_history(self, name: str = None, nodeid: str = None, num_values: int = 0) -> List[HistorySample]:
+    async def read_history(self, name: str, num_values: int = 0) -> List[HistorySample]:
         """
-        Reads a value of a variable given by its name or nodeid. The name of the
+        Reads a value of a variable given by its name. The name of the
         variable is a string of node names in the browse path separated by slashes relative
         to the objects node. If a parent has multiple nodes of the same name in
         different namespaces, the namespace can be specified as "<namespace idx>:<node name>".
         Example of the browse path is "MainFolder/ParentObject/3:MyVariable".
         :param name: path to the variable
-        :param nodeid: nodeid of the variable
         :param num_values: number of history values to read (0 for all values)
         """
         try:
-            if nodeid is not None:
-                raw_values: List[DataValue] = await self._server.get_node(nodeid).read_raw_history(numvalues=num_values)
-            elif name is not None:
-                node = await self._browse_path(name)
-                # fixme: await node.read_value() blocks when used in the MockServer.wait_for().. why?
-                raw_values: List[DataValue] = await node.read_raw_history(numvalues=num_values)
-            else:
-                raise ValueError("Either name or nodeid has to be specified")
+            node = await self._browse_path(name)
+            # fixme: await node.read_value() blocks when used in the MockServer.wait_for().. why?
+            raw_values: List[DataValue] = await node.read_raw_history(numvalues=num_values)
         except (BadNoMatch, BadNodeIdUnknown) as e:
             raise ValueError("Unknown variable identifier", e)
 
@@ -497,26 +505,20 @@ class MockServer:
         else:
             return str(value)
 
-    async def write(self, value: Any, name: str = None, nodeid: str = None) -> None:
+    async def write(self, name: str, value: Any) -> None:
         """
-        Writes a value to a variable given by its name or nodeid. The name of the
+        Writes a value to a variable given by its name. The name of the
         variable is a string of node names in the browse path separated by slashes relative
         to the objects node. If a parent has multiple nodes of the same name in
         different namespaces, the namespace can be specified as "<namespace idx>:<node name>".
         Example of the browse path is "MainFolder/ParentObject/3:MyVariable".
-        :param value: value to write
         :param name: path to the variable
-        :param nodeid: nodeid of the variable
+        :param value: value to write
         """
 
         try:
-            if nodeid is not None:
-                return await self._server.get_node(nodeid).read_value()
-            elif name is not None:
-                node = await self._browse_path(name)
-                await node.write_value(value)
-            else:
-                raise ValueError("Either name or nodeid has to be specified")
+            node = await self._browse_path(name)
+            await node.write_value(value)
         except (BadNoMatch, BadNodeIdUnknown) as e:
             raise ValueError("Unknown variable identifier", e)
 
@@ -553,6 +555,13 @@ class MockServer:
         return parent
 
     async def wait_for(self, name: str, value: Any, timeout: float = None) -> None:
+        """
+        Blocks until a variable is changed to a given value or a timeout is reached. If the timeout is None,
+        function blocks indefinitely.
+        :param name: Name of the variable to watch
+        :param value: Expected value
+        :param timeout: Timeout in seconds
+        """
         node_to_watch = await self._browse_path(name)
         cond = await self._notification_handler.register_notify(node_to_watch.nodeid)
         monitor_handle = await self._subscription.subscribe_data_change(node_to_watch)
@@ -574,6 +583,12 @@ class MockServer:
             self, var_name: str, callback: Callable[[Any], Union[None, Coroutine[Any, Any, None]]],
             arg_type: type = None
     ) -> None:
+        """
+        Registers OnChange callback. The callback is triggered when given variable changes its value.
+        :param var_name: Name of the variable to watch
+        :param callback: Sync or async function with one argument (new variable value) to call when the variable changes
+        :param arg_type: Type of the function argument. If None, type is not checked
+        """
         node_to_watch = await self._browse_path(var_name)
         self._notification_handler.register_callback(
             var_name,
@@ -591,6 +606,13 @@ class MockServer:
             self, function_name: str, callback: Callable[..., Union[None, Coroutine[Any, Any, None]]],
             arg_types: Iterable[type] = None
     ) -> None:
+        """
+        Registers an user function that can be called from the code or via REST API.
+        :param function_name: Unique name of the function
+        :param callback: Sync or async definition of the function to be called. Only basic types are supported.
+        :param arg_types: Tuple of arguments types of the function. If None, no types are checked,
+            if an element of the tuple is None, this specific type is not checked.
+        """
         if function_name in self._functions:
             raise ValueError("Callable already exists")
 
@@ -601,6 +623,12 @@ class MockServer:
         )
 
     async def call(self, name: str, *args: Any, auto_cast_types: bool = False):
+        """
+        Calls function defined by :py:func:`uamockapp.server.MockServer.on_call`.
+        :param name: Name of the function to call
+        :param args: Parameters to pass to the function
+        :param auto_cast_types: Enable auto casting of the parameters to match expected argument types
+        """
         self._logger.info("Calling function %s with args %s", name, args)
         if name not in self._functions:
             raise ValueError("Unknown callable")
@@ -632,6 +660,11 @@ class MockServer:
         return tuple(typed_args)
 
     async def get_data_image(self) -> Dict[str, DataImageItemValue]:
+        """
+        Returns a dictionary containing all the registered variables and its values.
+        :return: Dict mapping variable names to :py:class:`uamockapp.server.DataImageItemValue` containing its
+            values and history
+        """
         data_img = dict()
 
         for node_name in self._node_name_list:
@@ -644,6 +677,10 @@ class MockServer:
         return data_img
 
     async def get_function_list(self) -> List[FunctionDescription]:
+        """
+        Returns a list containing all functions registered by :py:function:`uamockapp.server.MockServer.on_call`.
+        :return: List of registered functions
+        """
         fcn_list = list()
 
         for name, func in self._functions.items():
@@ -657,6 +694,10 @@ class MockServer:
         return fcn_list
 
     async def get_onchange_list(self) -> List[OnChangeDescription]:
+        """
+        Returns a list containing all watched variables by :py:function:`uamockapp.server.MockServer.on_change`.
+        :return: List of watched variables
+        """
         onchange_list = list()
 
         for node_name in self._notification_handler.nodes_watched_for_change:

@@ -3,7 +3,7 @@ from typing import List
 
 import pytest
 
-from app.server import MockServer
+from uamockapp.server import MockServer
 
 
 @pytest.mark.asyncio

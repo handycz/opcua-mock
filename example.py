@@ -1,7 +1,7 @@
 import asyncio
 
-from app.mockapp import mockapp
-from app.server import MockServer
+from uamockapp.mockapp import mockapp
+from uamockapp.server import MockServer
 
 
 async def init_function(mock: MockServer):
@@ -9,18 +9,18 @@ async def init_function(mock: MockServer):
         if not value:
             return
 
-        await mock.write("Running", "Robot/Status")
+        await mock.write("Robot/Status", "Running")
         num_parts = await mock.read("Tray/NumParts")
         if num_parts > 0:
             await asyncio.sleep(2)
-            await mock.write(num_parts - 1, "Tray/NumParts")
-            await mock.write("Idle", "Robot/Status")
+            await mock.write("Tray/NumParts", num_parts - 1)
+            await mock.write("Robot/Status", "Idle")
         else:
-            await mock.write("Error", "Robot/Status")
+            await mock.write("Robot/Status", "Error")
 
     async def simulate_manual_tray_fill():
-        await mock.write(10, "Tray/NumParts")
-        await mock.write("Idle", "Robot/Status")
+        await mock.write("Tray/NumParts", 10)
+        await mock.write("Robot/Status", "Idle")
 
     await mock.on_change(
         "Robot/Start",

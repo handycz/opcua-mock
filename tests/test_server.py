@@ -11,7 +11,7 @@ from asyncua import Node
 from asyncua.ua import QualifiedName
 from asyncua.ua.uaerrors import BadUserAccessDenied
 
-from app.server import MockServer
+from uamockapp.server import MockServer
 
 
 @pytest.mark.asyncio
@@ -50,39 +50,19 @@ async def _read_nodes(opcua_client: asyncua.Client) -> Tuple[Node, Node, Node, N
 
 @pytest.mark.asyncio
 async def test_server_read_node_by_name(mock_server: MockServer):
-    val = await mock_server.read(name="Obj/2:Var3")
+    val = await mock_server.read("Obj/2:Var3")
     assert val == 101
-
-
-@pytest.mark.asyncio
-async def test_server_read_node_by_id(mock_server: MockServer):
-    val = await mock_server.read(nodeid="ns=1;i=10001")
-    assert val == 11
 
 
 @pytest.mark.asyncio
 async def test_server_read_nonexistent_node_by_name(mock_server: MockServer):
     with pytest.raises(ValueError):
-        await mock_server.read(name="ObjNonexistent")
-
-
-@pytest.mark.asyncio
-async def test_server_read_nonexistent_node_by_id(mock_server: MockServer):
-    with pytest.raises(ValueError):
-        await mock_server.read(nodeid="ns=1;i=10")
+        await mock_server.read("ObjNonexistent")
 
 
 @pytest.mark.asyncio
 async def test_server_write_node_by_name(mock_server: MockServer, opcua_client: asyncua.Client):
-    await mock_server.write(10000, name="Var2")
-    value = await opcua_client.get_node("ns=1;i=10001").read_value()
-
-    assert 10000 == value
-
-
-@pytest.mark.asyncio
-async def test_server_write_node_by_id(mock_server: MockServer, opcua_client: asyncua.Client):
-    await mock_server.write(20000, nodeid="ns=1;i=10001")
+    await mock_server.write("Var2", 10000)
     value = await opcua_client.get_node("ns=1;i=10001").read_value()
 
     assert 10000 == value
@@ -91,13 +71,7 @@ async def test_server_write_node_by_id(mock_server: MockServer, opcua_client: as
 @pytest.mark.asyncio
 async def test_server_write_nonexistent_node_by_name(mock_server: MockServer, opcua_client: asyncua.Client):
     with pytest.raises(ValueError):
-        await mock_server.write(10000, name="VarNonexistent")
-
-
-@pytest.mark.asyncio
-async def test_server_write_nonexistent_node_by_id(mock_server: MockServer, opcua_client: asyncua.Client):
-    with pytest.raises(ValueError):
-        await mock_server.write(20000, nodeid="ns=1;i=100000")
+        await mock_server.write("VarNonexistent", 10000)
 
 
 @pytest.mark.asyncio
@@ -114,14 +88,14 @@ async def test_server_external_write_write_disabled(mock_server: MockServer, opc
 @pytest.mark.asyncio
 @pytest.mark.parametrize('n', range(5))
 async def test_server_wait_for_predicate_not_fulfilled(mock_server: MockServer, opcua_client: asyncua.Client, n):
-    await mock_server.write(0, "Var2")
+    await mock_server.write("Var2", 0)
 
     wait_task = asyncio.create_task(
         mock_server.wait_for("Var2", 100, 0.2)
     )
 
     # Write some other value and check if the wait is not triggered
-    await mock_server.write(10, "Var2")
+    await mock_server.write("Var2", 10)
     with pytest.raises(asyncio.TimeoutError):
         await wait_task
 
@@ -129,20 +103,20 @@ async def test_server_wait_for_predicate_not_fulfilled(mock_server: MockServer, 
 @pytest.mark.asyncio
 @pytest.mark.parametrize('n', range(5))
 async def test_server_wait_for_predicate_fulfilled(mock_server: MockServer, opcua_client: asyncua.Client, n):
-    await mock_server.write(0, "Var2")
+    await mock_server.write("Var2", 0)
 
     wait_task = asyncio.create_task(
         mock_server.wait_for("Var2", 100, 3)
     )
 
     # Write the expected value and check for it
-    await mock_server.write(100, "Var2")
+    await mock_server.write("Var2", 100)
     await wait_task
 
 
 @pytest.mark.asyncio
 async def test_server_on_change_sync_cbk(mock_server: MockServer, opcua_client: asyncua.Client):
-    await mock_server.write(0, "Var2")
+    await mock_server.write("Var2", 0)
 
     evt = threading.Event()
     await mock_server.on_change(
@@ -159,7 +133,7 @@ async def test_server_on_change_sync_cbk(mock_server: MockServer, opcua_client: 
 @pytest.mark.asyncio
 @pytest.mark.parametrize('n', range(5))
 async def test_server_on_change_async_cbk(mock_server: MockServer, opcua_client: asyncua.Client, n):
-    await mock_server.write(0, "Var2")
+    await mock_server.write("Var2", 0)
 
     event = Event()
 
@@ -180,11 +154,11 @@ async def test_server_on_change_async_cbk(mock_server: MockServer, opcua_client:
 @pytest.mark.asyncio
 async def test_server_on_change_write_server_from_async_cbk(mock_server: MockServer, opcua_client: asyncua.Client):
     expected_value = random.randint(1, 500)
-    await mock_server.write(0, "Var2")
+    await mock_server.write("Var2", 0)
 
     async def cbk(val):
         if val == 100:
-            await mock_server.write(expected_value, "Var2")
+            await mock_server.write("Var2", expected_value)
 
     await mock_server.on_change(
         "Var2", cbk

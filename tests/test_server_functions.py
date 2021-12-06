@@ -4,7 +4,7 @@ import queue
 import asyncua
 import pytest
 
-from app.server import MockServer
+from uamockapp.server import MockServer
 
 
 @pytest.mark.asyncio
@@ -96,7 +96,7 @@ async def test_server_call_write_server_from_callback(mock_server: MockServer, o
     evt = asyncio.Event()
 
     async def cbk(x):
-        await mock_server.write(x, "Var2")
+        await mock_server.write("Var2", x)
         evt.set()
 
     await mock_server.on_call(
