@@ -8,25 +8,25 @@ security:
     - username: admin
       password: 8c6976e5b5410415bde908bd4dee15dfb167a9c873fc4bb8a81f6f2ab448a918 # SHA256 of "admin"
 nodes:
-    - nodeid: ns=1;i=10000
+    - nodeid: ns=2;i=10000
       name: Robot
       type: object
       value:
-        - nodeid: ns=1;i=10001
+        - nodeid: ns=2;i=10001
           name: Start
           type: variable
           value: false
           writable: true
-        - nodeid: ns=1;i=10002
+        - nodeid: ns=2;i=10002
           name: Status
           type: variable
           value: Idle
           writable: false
-    - nodeid: ns=1;i=20000
+    - nodeid: ns=2;i=20000
       name: Tray
       type: object
       value:
-        - nodeid: ns=1;i=20001
+        - nodeid: ns=2;i=20001
           name: NumParts
           type: variable
           value: 10
