@@ -6,7 +6,7 @@ from typing import List, Dict
 import uvicorn
 from fastapi import FastAPI, APIRouter, HTTPException
 
-from app.server import MockServer, OnChangeDescription, FunctionDescription, DataImageItemValue
+from uamockapp.server import MockServer, OnChangeDescription, FunctionDescription, DataImageItemValue
 
 __all__ = ["create_web_interface"]
 

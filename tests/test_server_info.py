@@ -1,7 +1,7 @@
 import asyncio
 import pytest
 
-from app.server import MockServer
+from uamockapp.server import MockServer
 
 
 @pytest.mark.asyncio
@@ -47,8 +47,8 @@ async def test_server_list_functions(mock_server: MockServer):
 @pytest.mark.asyncio
 async def test_server_onchange_list(mock_server: MockServer):
     for val in range(5):
-        await mock_server.write(val, "Var1")
-        await mock_server.write(val * 2, "Var2")
+        await mock_server.write("Var1", val)
+        await mock_server.write("Var2", val * 2)
 
     await asyncio.sleep(0.1)
 

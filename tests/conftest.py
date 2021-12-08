@@ -6,8 +6,8 @@ import asyncua
 import pytest
 from starlette.testclient import TestClient
 
-from app.server import MockServer, DataImageItemValue, HistorySample
-from app.web import create_web_interface
+from uamockapp.server import MockServer, DataImageItemValue, HistorySample
+from uamockapp.web import create_web_interface
 
 
 @pytest.fixture(scope="module")
@@ -37,8 +37,8 @@ async def history_mock_server():
     await server.init()
     async with server:
         for val in range(15):
-            await server.write(val, "Var1")
-            await server.write(val, "Var2")
+            await server.write("Var1", val)
+            await server.write("Var2", val)
         await asyncio.sleep(0.1)
 
         yield server

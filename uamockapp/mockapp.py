@@ -8,9 +8,9 @@ import hypercorn
 import hypercorn.asyncio
 from asyncio import Task
 
-from app.web import create_web_interface
-from app.scanner import generate_server_config
-from app.server import MockServer
+from uamockapp.web import create_web_interface
+from uamockapp.scanner import generate_server_config
+from uamockapp.server import MockServer
 
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
