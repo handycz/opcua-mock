@@ -12,11 +12,17 @@ from uamockapp.web import create_web_interface
 from uamockapp.scanner import generate_server_config
 from uamockapp.server import MockServer
 
+__all__ = ["mockapp"]
+
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
 
 async def mockapp(server_initialization: Callable[[MockServer], Coroutine[Any, Any, None]] = None) -> None:
+    """
+    Runs the application
+    :param server_initialization: initialization function used to create callbacks and configure server
+    """
     args = await get_args()
     if "scan" in args and args["scan"] is not None:
         await generate_server_config(args["scan"], args["config"])
@@ -29,6 +35,12 @@ async def mockapp(server_initialization: Callable[[MockServer], Coroutine[Any, A
 
 
 async def start_app(config_path: str, http_port: int) -> Tuple[MockServer, Task]:
+    """
+    Create and run the OPC UA server and the webserver
+    :param config_path: Path to the configuration file
+    :param http_port: port for the server to listen
+    :return: tuple of created MockServer instance and task running the webserver
+    """
     mockserver = MockServer(config_path)
     await mockserver.init()
     await mockserver.start()
@@ -41,9 +53,6 @@ async def start_app(config_path: str, http_port: int) -> Tuple[MockServer, Task]
             webapp, webserver_config
         )
     )
-    # uvicorn.run(webapp, host="localhost", port=http_port)
-    # webserver_thread = Thread(target=lambda: uvicorn.run(webapp, host="localhost", port=http_port))
-    # webserver_thread.start()
 
     return mockserver, web_task
 

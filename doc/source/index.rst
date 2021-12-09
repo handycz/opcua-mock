@@ -6,19 +6,25 @@
 Welcome to OPC UA Mock Server's documentation!
 ==============================================
 
-.. toctree::
-   :maxdepth: 2
-   :caption: Contents:
-
-.. automodule:: uamockapp.server
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
-
-Indices and tables
-==================
-
 * :ref:`genindex`
 * :ref:`modindex`
 * :ref:`search`
+
+Server module
+==============
+.. automodule:: uamockapp.server
+   :members: FunctionDescription, HistorySample, OnChangeDescription, DataImageItemValue, MockServer
+   :undoc-members:
+   :show-inheritance:
+
+web module
+===========
+.. automodule:: uamockapp.web
+   :members: create_web_interface
+   :show-inheritance:
+
+mockapp module
+==============
+.. automodule:: uamockapp.mockapp
+   :members: mockapp
+   :show-inheritance:

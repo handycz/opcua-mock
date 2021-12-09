@@ -12,6 +12,11 @@ __all__ = ["create_web_interface"]
 
 
 def create_web_interface(opcua: MockServer) -> FastAPI:
+    """
+    Creates a web app for the OPC UA Mock Server
+    :param opcua: OPC UA Mock Server to publish on the web page
+    :return: Web app instance
+    """
     router = APIRouter()
     logger = logging.getLogger(__name__)
 
