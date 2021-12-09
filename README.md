@@ -109,3 +109,10 @@ To interact with the server, object `MockServer` is used. Functions to be used b
 `wait_for`, `on_change`, `on_call` and `call`. 
 
 ### Using REST
+Via the REST API, user can call functions defined by `on_call`, read all the variables and list registered
+functions and `on_change` callbacks. It can be accessed via http on the port chosen when starting the app.
+Documentation of the API is hosted by the application itself on `/docs` endpoint (e.g., `http://localhost:8080/docs`) 
+or by `openapi.json` file located at (e.g., `http://localhost:8080/openapi.json`). All the API functions are served 
+on `/api/` endpoint. 
+
+Currently, there is no front-end interface. Nevertheless, `/docs` endpoint can be used to execute queries.
